@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" **content**="width=device-width, initial-scale=1.0"/>
   <title>Metal Sound Detector</title>
   <style>
     :root {
@@ -117,7 +117,6 @@
 
     .hidden { display: none; }
 
-    /* Responsive */
     @media (max-width: 600px) {
       h1 { font-size: 2rem; }
       #recordBtn { font-size: 1.2rem; padding: 14px 30px; }
@@ -140,27 +139,29 @@
     <input type="file" name="audio_file" id="audioInput" accept="audio/wav">
   </form>
 
-  <!-- Result Display -->
+  <!-- RESULT DISPLAY — PERFECT FOR YOUR audio_processor.py -->
   {% if result %}
     <div id="result" class="
-      {% if result.metal == 'Metal 1' %}metal1
-      {% elif result.metal == 'Metal 2' %}metal2
-      {% elif 'error' in result %}error
+      {% if result.metal == 'M1' %}metal1
+      {% elif result.metal == 'M2' %}metal2
+      {% elif result.error %}error
       {% else %}uncertain{% endif %}">
+
       {% if result.metal %}
         <div><strong>Detected: {{ result.metal }}</strong></div>
         <div>Confidence: {{ result.confidence|floatformat:3 }}</div>
-        <div><small>Spike at: {{ result.spike_time }}s</small></div>
       {% elif result.error %}
         <div><strong>Error:</strong> {{ result.error }}</div>
       {% else %}
-        <div>No result</div>
+        <div><strong>NO DETECTION</strong></div>
+        <div style="font-size: 1rem; margin-top: 8px; color: #ffcc00;">
+          <strong>Hit HARDER!</strong>
+        </div>
       {% endif %}
     </div>
   {% endif %}
 
   <script>
-    // === ELEMENTS ===
     const recordBtn = document.getElementById('recordBtn');
     const timerDiv = document.getElementById('timer');
     const statusDiv = document.getElementById('status');
@@ -171,7 +172,6 @@
 
     let recorder, audioBlob, animationId, audioContext, analyser, dataArray;
 
-    // Resize canvas
     function resizeCanvas() {
       canvas.width = Math.min(700, window.innerWidth - 40);
       canvas.height = window.innerWidth < 600 ? 120 : 160;
@@ -179,7 +179,6 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // Draw waveform
     function drawWaveform() {
       animationId = requestAnimationFrame(drawWaveform);
       analyser.getByteTimeDomainData(dataArray);
@@ -202,9 +201,7 @@
       ctx.stroke();
     }
 
-    // Start recording
     recordBtn.addEventListener('click', async () => {
-      // Reset UI
       document.getElementById('result')?.remove();
       timerDiv.textContent = 'Recording: 5';
       statusDiv.textContent = '';
@@ -217,7 +214,6 @@
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        // Visualizer
         audioContext = new AudioContext();
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 2048;
@@ -226,7 +222,6 @@
         source.connect(analyser);
         drawWaveform();
 
-        // Recorder
         recorder = new MediaRecorder(stream);
         const chunks = [];
         recorder.ondataavailable = e => chunks.push(e.data);
@@ -241,7 +236,6 @@
 
         recorder.start();
 
-        // Countdown
         let time = 5;
         const interval = setInterval(() => {
           time--;
@@ -249,7 +243,6 @@
           if (time <= 0) clearInterval(interval);
         }, 1000);
 
-        // Stop after 5s
         setTimeout(() => {
           recorder.stop();
           stream.getTracks().forEach(t => t.stop());

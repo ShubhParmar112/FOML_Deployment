@@ -15,15 +15,18 @@ def home(request):
             audio_file = request.FILES['audio_file']
             file_path = os.path.join(settings.MEDIA_ROOT, 'uploads', 'temp_recording.wav')
 
-            # Save file
-            with open(file_path, 'wb+') as f:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            # Save uploaded file
+            with open(file_path, 'wb+') as destination:
                 for chunk in audio_file.chunks():
-                    f.write(chunk)
+                    destination.write(chunk)
 
             # Predict
             result = predict_metal_from_file(file_path)
 
-            # Clean up
+            # Clean up temp file
             if os.path.exists(file_path):
                 os.remove(file_path)
 
