@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Metal Sound Detector</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --text: #eee;
+      --accent: #00ff88;
+      --btn-record: #00ff88;
+      --btn-recording: #ff3366;
+      --metal1: #00ccff;
+      --metal2: #ff66cc;
+      --warning: #ffcc00;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      text-align: center;
+      padding: 40px 20px;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      color: var(--accent);
+      font-size: 2.8rem;
+      margin-bottom: 30px;
+      text-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+    }
+
+    #recordBtn {
+      padding: 18px 40px;
+      font-size: 1.4rem;
+      font-weight: bold;
+      background: var(--btn-record);
+      color: #000;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4);
+      margin: 20px 0;
+    }
+
+    #recordBtn:hover:not(:disabled) {
+      background: #00cc66;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+    }
+
+    #recordBtn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    #recordBtn.recording {
+      background: var(--btn-recording);
+      color: white;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    #waveform {
+      width: 100%;
+      max-width: 700px;
+      height: 160px;
+      margin: 25px auto;
+      background: #111;
+      border-radius: 16px;
+      border: 2px solid #333;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    #timer {
+      font-size: 1.6rem;
+      color: var(--warning);
+      margin: 15px 0;
+      font-weight: bold;
+    }
+
+    #status {
+      margin: 15px 0;
+      font-size: 1.1rem;
+      color: #aaa;
+    }
+
+    #result {
+      margin-top: 30px;
+      padding: 20px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      width: 90%;
+      max-width: 600px;
+      min-height: 80px;
+      font-size: 1.3rem;
+      font-weight: bold;
+    }
+
+    .metal1 { color: var(--metal1); }
+    .metal2 { color: var(--metal2); }
+    .error { color: #ff4444; }
+    .uncertain { color: var(--warning); }
+
+    .hidden { display: none; }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      h1 { font-size: 2rem; }
+      #recordBtn { font-size: 1.2rem; padding: 14px 30px; }
+      #waveform { height: 120px; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Metal Sound Detector</h1>
+
+  <button id="recordBtn">RECORD (5s)</button>
+  <div id="timer"></div>
+  <div id="status"></div>
+  <canvas id="waveform"></canvas>
+
+  <!-- Hidden form for auto-submit -->
+  <form id="uploadForm" method="post" enctype="multipart/form-data" class="hidden">
+    {% csrf_token %}
+    <input type="file" name="audio_file" id="audioInput" accept="audio/wav">
+  </form>
+
+  <!-- Result Display -->
+  {% if result %}
+    <div id="result" class="
+      {% if result.metal == 'Metal 1' %}metal1
+      {% elif result.metal == 'Metal 2' %}metal2
+      {% elif 'error' in result %}error
+      {% else %}uncertain{% endif %}">
+      {% if result.metal %}
+        <div><strong>Detected: {{ result.metal }}</strong></div>
+        <div>Confidence: {{ result.confidence|floatformat:3 }}</div>
+        <div><small>Spike at: {{ result.spike_time }}s</small></div>
+      {% elif result.error %}
+        <div><strong>Error:</strong> {{ result.error }}</div>
+      {% else %}
+        <div>No result</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <script>
+    // === ELEMENTS ===
+    const recordBtn = document.getElementById('recordBtn');
+    const timerDiv = document.getElementById('timer');
+    const statusDiv = document.getElementById('status');
+    const canvas = document.getElementById('waveform');
+    const ctx = canvas.getContext('2d');
+    const form = document.getElementById('uploadForm');
+    const audioInput = document.getElementById('audioInput');
+
+    let recorder, audioBlob, animationId, audioContext, analyser, dataArray;
+
+    // Resize canvas
+    function resizeCanvas() {
+      canvas.width = Math.min(700, window.innerWidth - 40);
+      canvas.height = window.innerWidth < 600 ? 120 : 160;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Draw waveform
+    function drawWaveform() {
+      animationId = requestAnimationFrame(drawWaveform);
+      analyser.getByteTimeDomainData(dataArray);
+
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#00ff88';
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / dataArray.length;
+      let x = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * canvas.height / 2;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    }
+
+    // Start recording
+    recordBtn.addEventListener('click', async () => {
+      // Reset UI
+      document.getElementById('result')?.remove();
+      timerDiv.textContent = 'Recording: 5';
+      statusDiv.textContent = '';
+      recordBtn.disabled = true;
+      recordBtn.classList.add('recording');
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (animationId) cancelAnimationFrame(animationId);
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Visualizer
+        audioContext = new AudioContext();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        drawWaveform();
+
+        // Recorder
+        recorder = new MediaRecorder(stream);
+        const chunks = [];
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = () => {
+          audioBlob = new Blob(chunks, { type: 'audio/wav' });
+          const file = new File([audioBlob], 'recording.wav', { type: 'audio/wav' });
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          audioInput.files = dt.files;
+          form.submit();
+        };
+
+        recorder.start();
+
+        // Countdown
+        let time = 5;
+        const interval = setInterval(() => {
+          time--;
+          timerDiv.textContent = `Recording: ${time}`;
+          if (time <= 0) clearInterval(interval);
+        }, 1000);
+
+        // Stop after 5s
+        setTimeout(() => {
+          recorder.stop();
+          stream.getTracks().forEach(t => t.stop());
+          audioContext.close();
+          recordBtn.classList.remove('recording');
+          recordBtn.disabled = false;
+          timerDiv.textContent = '';
+          statusDiv.textContent = 'Processing...';
+        }, 5000);
+
+      } catch (err) {
+        statusDiv.textContent = 'Mic access denied!';
+        statusDiv.style.color = '#ff4444';
+        recordBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
